@@ -30,7 +30,12 @@ pub fn deinit(self: *Manual) void {
 
 pub fn initTerminal(self: *Manual, t: *terminal.Terminal) void {
     _ = self;
-    _ = t;
+    // The shell is remote (e.g. behind SSH) and we can't assume it redraws its
+    // prompt after a resize, so don't clear prompt lines on resize unless the
+    // shell opts in via OSC 133. Matches libghostty-vt's default for
+    // embedders. With the upstream default, rotating a phone lost the prompt
+    // line under bash.
+    t.flags.shell_redraws_prompt = .false;
 }
 
 pub fn threadEnter(

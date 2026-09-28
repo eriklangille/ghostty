@@ -16826,3 +16826,79 @@ test "Terminal: prependRawScrollback stops at the scrollback limit" {
     _ = try t.prependRawScrollback(alloc, data.items);
     t.screens.get(.primary).?.pages.assertIntegrity();
 }
+
+// Regression tests from Clauntty: rotating a phone (54x44 portrait to 101x19
+// landscape) lost the bottom prompt line, because resize clears the current
+// OSC 133 prompt expecting the shell to redraw it, and a remote bash doesn't.
+// termio.Manual sets shell_redraws_prompt = .false for this; the tests do too.
+
+fn clauntty_rotation_setup(alloc: Allocator, t: *Terminal, second_prompt: []const u8) !void {
+    t.flags.shell_redraws_prompt = .false;
+    var stream = t.vtStream();
+    defer stream.deinit();
+    for (0..37) |_| stream.nextSlice("\r\n");
+    stream.nextSlice(
+        "info(client): connected to /home/ubuntu/.clauntty\r\n" ++
+            "info(shell_integration): deployed shell integ\r\n" ++
+            "info(master): detected shell type: bash\r\n" ++
+            "info(master): executing shell: /bin/bash\r\n" ++
+            "info(master):   arg1: --rcfile\r\n" ++
+            "\x1b]133;A\x07ubuntu@ip-10-0-1-108:~$ \r\n" ++
+            "\x1b]133;A\x07",
+    );
+    stream.nextSlice(second_prompt);
+    _ = alloc;
+}
+
+fn clauntty_count(haystack: []const u8, needle: []const u8) usize {
+    return std.mem.count(u8, haystack, needle);
+}
+
+test "Terminal: clauntty rotation keeps both prompt lines" {
+    const alloc = testing.allocator;
+    var t = try init(testing.io, alloc, .{ .cols = 54, .rows = 44 });
+    defer t.deinit(alloc);
+    try clauntty_rotation_setup(alloc, &t, "ubuntu@ip-10-0-1-108:~$ ");
+
+    try t.resize(alloc, .{ .cols = 101, .rows = 19 });
+
+    const str = try t.screens.active.dumpStringAlloc(alloc, .{ .screen = .{} });
+    defer alloc.free(str);
+    try testing.expectEqual(@as(usize, 2), clauntty_count(str, "ubuntu@ip-10-0-1-108:~$"));
+}
+
+test "Terminal: clauntty rotation then width wiggle keeps both prompt lines" {
+    const alloc = testing.allocator;
+    var t = try init(testing.io, alloc, .{ .cols = 54, .rows = 44 });
+    defer t.deinit(alloc);
+    try clauntty_rotation_setup(alloc, &t, "ubuntu@ip-10-0-1-108:~$ ");
+
+    try t.resize(alloc, .{ .cols = 101, .rows = 19 });
+    try t.resize(alloc, .{ .cols = 100, .rows = 19 });
+    try t.resize(alloc, .{ .cols = 101, .rows = 19 });
+
+    const str = try t.screens.active.dumpStringAlloc(alloc, .{ .screen = .{} });
+    defer alloc.free(str);
+    try testing.expectEqual(@as(usize, 2), clauntty_count(str, "ubuntu@ip-10-0-1-108:~$"));
+}
+
+test "Terminal: clauntty rotation keeps a blank prompt line below the previous prompt" {
+    const alloc = testing.allocator;
+    var t = try init(testing.io, alloc, .{ .cols = 54, .rows = 44 });
+    defer t.deinit(alloc);
+    // Second prompt is marked (OSC 133;A) but nothing has been printed yet.
+    try clauntty_rotation_setup(alloc, &t, "");
+
+    try t.resize(alloc, .{ .cols = 101, .rows = 19 });
+
+    // The cursor's line must still be directly below the first prompt.
+    const vp = try t.plainString(alloc);
+    defer alloc.free(vp);
+    var lines = std.mem.splitScalar(u8, vp, '\n');
+    var idx: usize = 0;
+    var above: []const u8 = "";
+    while (lines.next()) |line| : (idx += 1) {
+        if (idx + 1 == t.screens.active.cursor.y) above = line;
+    }
+    try testing.expect(std.mem.indexOf(u8, above, "ubuntu@ip-10-0-1-108:~$") != null);
+}
