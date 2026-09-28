@@ -392,6 +392,73 @@ pub fn vtStream(self: *Terminal) Stream {
     });
 }
 
+/// Parse raw VT output (e.g. history fetched from a remote session) and add
+/// it above the primary screen's existing scrollback, oldest content first.
+///
+/// The bytes are parsed into a temporary terminal of the same size, and its
+/// pages are prepended with PageList.allocatePage/finalize(.prepend), which
+/// keeps row and size accounting, the viewport and scrollback limits correct.
+/// Blank rows below the temporary terminal's cursor are dropped so there is
+/// no gap between the added history and the existing content. The primary
+/// screen is used even while the alternate screen is active.
+///
+/// Returns the number of rows added. Stops early, without error, when the
+/// scrollback limits can't take more; a return of 0 then means "full".
+pub fn prependRawScrollback(
+    self: *Terminal,
+    alloc: Allocator,
+    data: []const u8,
+) !usize {
+    const primary = self.screens.get(.primary).?;
+
+    var temp = try Terminal.init(primary.io, alloc, .{
+        .cols = self.cols,
+        .rows = self.rows,
+        .max_scrollback_bytes = null,
+    });
+    defer temp.deinit(alloc);
+
+    var stream = temp.vtStream();
+    defer stream.deinit();
+    stream.nextSlice(data);
+
+    const src_screen = temp.screens.get(.primary).?;
+    const src_pages = &src_screen.pages;
+
+    // Rows at the end with nothing written: those below the cursor, plus the
+    // cursor's own row when the data ended with a newline.
+    var skip: usize = temp.rows - 1 - src_screen.cursor.y;
+    if (src_screen.cursor.x == 0) skip += 1;
+
+    var added: usize = 0;
+    var node = src_pages.pages.last;
+    while (node) |n| : (node = n.prev) {
+        const src = n.pageAssumeResident();
+        var rows: usize = src.size.rows;
+        if (skip >= rows) {
+            skip -= rows;
+            continue;
+        }
+        rows -= skip;
+        skip = 0;
+
+        var allocation = try primary.pages.allocatePage(src.capacity);
+        defer allocation.deinit();
+        allocation.page().size.rows = @intCast(rows);
+        try allocation.page().cloneFrom(src, 0, rows);
+        allocation.finalize(.prepend) catch |err| switch (err) {
+            error.MaxSizeExceeded, error.MaxLinesExceeded => break,
+            else => return err,
+        };
+        added += rows;
+    }
+
+    if (added > 0 and src_screen.semantic_prompt.seen) {
+        primary.semantic_prompt.seen = true;
+    }
+    return added;
+}
+
 /// This is the handler-side only for vtStream.
 pub fn vtHandler(self: *Terminal) Stream.Handler {
     return .init(self);
@@ -16674,4 +16741,88 @@ test "Terminal: eraseDisplay complete ignores stale prompt on recycled row" {
     t.eraseDisplay(.complete, false);
 
     try testing.expectEqual(t.screens.active.pages.rows, t.screens.active.pages.total_rows);
+}
+
+test "Terminal: prependRawScrollback adds history above existing content" {
+    const alloc = testing.allocator;
+    var t = try init(testing.io, alloc, .{ .cols = 10, .rows = 3 });
+    defer t.deinit(alloc);
+
+    try t.printString("cur");
+    const added = try t.prependRawScrollback(alloc, "a\r\nb\r\nc\r\n");
+    try testing.expectEqual(@as(usize, 3), added);
+
+    const str = try t.screens.active.dumpStringAlloc(alloc, .{ .screen = .{} });
+    defer alloc.free(str);
+    try testing.expectEqualStrings("a\nb\nc\ncur", str);
+}
+
+test "Terminal: prependRawScrollback keeps a trailing line without newline" {
+    const alloc = testing.allocator;
+    var t = try init(testing.io, alloc, .{ .cols = 10, .rows = 3 });
+    defer t.deinit(alloc);
+
+    try t.printString("cur");
+    const added = try t.prependRawScrollback(alloc, "a\r\nb");
+    try testing.expectEqual(@as(usize, 2), added);
+
+    const str = try t.screens.active.dumpStringAlloc(alloc, .{ .screen = .{} });
+    defer alloc.free(str);
+    try testing.expectEqualStrings("a\nb\ncur", str);
+}
+
+test "Terminal: prependRawScrollback repeated calls stack oldest first" {
+    const alloc = testing.allocator;
+    // Unlimited: each prepend takes at least one page, and the default
+    // 10KB limit only admits one.
+    var t = try init(testing.io, alloc, .{
+        .cols = 10,
+        .rows = 3,
+        .max_scrollback_bytes = null,
+    });
+    defer t.deinit(alloc);
+
+    try t.printString("cur");
+    _ = try t.prependRawScrollback(alloc, "c\r\n");
+    _ = try t.prependRawScrollback(alloc, "a\r\nb\r\n");
+
+    const str = try t.screens.active.dumpStringAlloc(alloc, .{ .screen = .{} });
+    defer alloc.free(str);
+    try testing.expectEqualStrings("a\nb\nc\ncur", str);
+}
+
+test "Terminal: prependRawScrollback targets primary while alternate is active" {
+    const alloc = testing.allocator;
+    var t = try init(testing.io, alloc, .{ .cols = 10, .rows = 3 });
+    defer t.deinit(alloc);
+
+    try t.printString("cur");
+    try t.switchScreenMode(.@"1049", true);
+    try testing.expectEqual(.alternate, t.screens.active_key);
+    const alt_rows = t.screens.get(.alternate).?.pages.total_rows;
+
+    _ = try t.prependRawScrollback(alloc, "a\r\nb\r\n");
+    try testing.expectEqual(alt_rows, t.screens.get(.alternate).?.pages.total_rows);
+
+    const str = try t.screens.get(.primary).?.dumpStringAlloc(alloc, .{ .screen = .{} });
+    defer alloc.free(str);
+    try testing.expectEqualStrings("a\nb\ncur", str);
+}
+
+test "Terminal: prependRawScrollback stops at the scrollback limit" {
+    const alloc = testing.allocator;
+    var t = try init(testing.io, alloc, .{
+        .cols = 10,
+        .rows = 3,
+        .max_scrollback_bytes = 0,
+    });
+    defer t.deinit(alloc);
+
+    var data: std.ArrayList(u8) = .empty;
+    defer data.deinit(alloc);
+    for (0..5000) |i| try data.print(alloc, "line {d}\r\n", .{i});
+
+    // Must not fail or corrupt the list; whatever fits is kept.
+    _ = try t.prependRawScrollback(alloc, data.items);
+    t.screens.get(.primary).?.pages.assertIntegrity();
 }

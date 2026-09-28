@@ -2053,6 +2053,28 @@ pub const CAPI = struct {
         thread.wakeup.notify() catch {};
     }
 
+    /// Parse raw VT output (older history, e.g. from a remote session) and
+    /// add it above the existing scrollback. Returns false if nothing could
+    /// be added (an error, or the scrollback limits are reached), so callers
+    /// paging in history can stop.
+    export fn ghostty_surface_prepend_scrollback(
+        surface: *Surface,
+        ptr: [*]const u8,
+        len: usize,
+    ) bool {
+        const core = &surface.core_surface;
+        core.renderer_state.mutex.lockUncancelable(global.io());
+        defer core.renderer_state.mutex.unlock(global.io());
+        const added = core.renderer_state.terminal.prependRawScrollback(
+            core.alloc,
+            ptr[0..len],
+        ) catch |err| {
+            log.warn("error prepending scrollback err={}", .{err});
+            return false;
+        };
+        return added > 0;
+    }
+
     /// Whether the terminal is currently showing the alternate screen
     /// (full-screen programs such as vim or Claude Code).
     export fn ghostty_surface_is_alternate_screen(surface: *Surface) bool {
