@@ -74,6 +74,13 @@ pub fn build(b: *std.Build) !void {
         ) } },
         .target = target,
         .optimize = optimize,
+        // Apple's framework headers use blocks. They're enabled by default for
+        // macOS targets but not iOS, where translation fails with "blocks are
+        // not enabled" (clauntty builds the full library for iOS).
+        .extra_args = if (target.result.os.tag.isDarwin() and target.result.os.tag != .macos)
+            &.{"-fblocks"}
+        else
+            &.{},
     });
 
     const lib = b.addLibrary(.{
