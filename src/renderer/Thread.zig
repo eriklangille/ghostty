@@ -49,6 +49,14 @@ render_h: xev.Timer,
 render_c: xev.Completion = .{},
 render_c_cancel: xev.Completion = .{},
 
+/// Render coalescing timer (iOS). Separate from render_h, which is also the
+/// animation timer.
+coalesce_h: xev.Timer,
+coalesce_c: xev.Completion = .{},
+
+/// Battery-saving mode set by the embedder (iOS).
+power_mode: rendererpkg.Message.PowerMode = .normal,
+
 /// The kind of work the currently scheduled animation wake needs,
 /// stored when the timer is armed.
 animation_wake: rendererpkg.Renderer.AnimationWake.Kind = .draw,
@@ -136,6 +144,9 @@ pub fn init(
     var render_h = try xev.Timer.init();
     errdefer render_h.deinit();
 
+    var coalesce_h = try xev.Timer.init();
+    errdefer coalesce_h.deinit();
+
     // Draw now async, see comments.
     var draw_now = try xev.Async.init();
     errdefer draw_now.deinit();
@@ -155,6 +166,7 @@ pub fn init(
         .wakeup = wakeup_h,
         .stop = stop_h,
         .render_h = render_h,
+        .coalesce_h = coalesce_h,
         .draw_now = draw_now,
         .cursor_h = cursor_timer,
         .surface = surface,
@@ -178,6 +190,7 @@ pub fn deinit(self: *Thread) void {
     self.stop.deinit();
     self.wakeup.deinit();
     self.render_h.deinit();
+    self.coalesce_h.deinit();
     self.draw_now.deinit();
     self.cursor_h.deinit();
     if (comptime terminalpkg.compression_enabled)
@@ -269,6 +282,9 @@ fn setQosClass(self: *const Thread) void {
         // Metal will stop our DisplayLink) but this also helps with
         // general forced updates and CPU usage i.e. a rebuild cells call.
         if (!self.flags.visible) break :class .utility;
+
+        // Battery saving: drop priority even when visible.
+        if (self.power_mode == .low_power) break :class .utility;
 
         // If we're not focused, but we're visible, then we set a higher
         // than default priority because framerates still matter but it isn't
@@ -439,6 +455,12 @@ fn drainMailbox(self: *Thread) !void {
                     try self.renderer.setMacOSDisplayID(v, &self.draw_now);
                 }
             },
+
+            .power_mode => |mode| {
+                self.power_mode = mode;
+                self.setQosClass();
+                log.debug("power mode={} coalesce={}ms", .{ mode, mode.coalesceDelayMs() });
+            },
         }
     }
 }
@@ -489,8 +511,24 @@ fn wakeupCallback(
     t.drainMailbox() catch |err|
         log.err("error draining mailbox err={}", .{err});
 
-    // Render immediately
-    _ = renderCallback(t, undefined, undefined, {});
+    // On iOS, coalesce renders: output often arrives as many small SSH
+    // packets, and each render (updateFrame/rebuildCells) is expensive there.
+    // Rendering once per short window saves a lot of CPU and battery, and the
+    // delay isn't noticeable. Elsewhere, render immediately.
+    if (comptime builtin.os.tag == .ios) {
+        if (t.coalesce_c.state() != .active) {
+            t.coalesce_h.run(
+                &t.loop,
+                &t.coalesce_c,
+                t.power_mode.coalesceDelayMs(),
+                Thread,
+                t,
+                coalesceCallback,
+            );
+        }
+    } else {
+        _ = renderCallback(t, undefined, undefined, {});
+    }
 
     // PageList mutations maintain their own compression dirty state. Checking
     // it here covers output, resize, and viewport scrolling uniformly.
@@ -532,6 +570,23 @@ fn drawNowCallback(
     t.drawFrame(true);
 
     return .rearm;
+}
+
+fn coalesceCallback(
+    self_: ?*Thread,
+    loop: *xev.Loop,
+    c: *xev.Completion,
+    r: xev.Timer.RunError!void,
+) xev.CallbackAction {
+    _ = r catch |err| switch (err) {
+        error.Canceled => return .disarm,
+        else => {
+            log.warn("error in render coalesce timer err={}", .{err});
+            return .disarm;
+        },
+    };
+    _ = renderCallback(self_, loop, c, {});
+    return .disarm;
 }
 
 fn renderCallback(

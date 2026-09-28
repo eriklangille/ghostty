@@ -2041,6 +2041,18 @@ pub const CAPI = struct {
         surface.pty_input_callback = callback;
     }
 
+    /// Set the battery-saving power mode (0 = normal, 1 = low power). Changes
+    /// the render coalescing delay on iOS and the render thread's QoS class.
+    export fn ghostty_surface_set_power_mode(surface: *Surface, mode_raw: c_int) void {
+        const mode = std.enums.fromInt(renderer.Message.PowerMode, mode_raw) orelse {
+            log.warn("invalid power mode value={}", .{mode_raw});
+            return;
+        };
+        const thread = &surface.core_surface.renderer_thread;
+        _ = thread.mailbox.push(global.io(), .{ .power_mode = mode }, .{ .instant = {} });
+        thread.wakeup.notify() catch {};
+    }
+
     /// Whether the terminal is currently showing the alternate screen
     /// (full-screen programs such as vim or Claude Code).
     export fn ghostty_surface_is_alternate_screen(surface: *Surface) bool {

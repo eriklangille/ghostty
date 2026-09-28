@@ -67,11 +67,29 @@ pub const Message = union(enum) {
     /// The macOS display ID has changed for the window.
     macos_display_id: u32,
 
+    /// Power mode for battery saving (iOS): sets the render coalescing delay
+    /// and the thread QoS class.
+    power_mode: PowerMode,
+
     /// Updates the health of the current presentation state.
     ///
     /// If unhealthy, then somehow the apprt failed to present frames from
     /// the renderer. On GTK, this can be caused by failing to import a DMABUF.
     presentation_health: renderer.Health,
+
+    pub const PowerMode = enum(c_int) {
+        normal = 0,
+        low_power = 1,
+
+        /// How long to wait after a wakeup before rendering, so that bursts
+        /// of output (e.g. many small SSH packets) render once.
+        pub fn coalesceDelayMs(self: PowerMode) u64 {
+            return switch (self) {
+                .normal => 10,
+                .low_power => 30,
+            };
+        }
+    };
 
     pub const SearchMatches = struct {
         arena: ArenaAllocator,

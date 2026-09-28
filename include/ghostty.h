@@ -1202,6 +1202,14 @@ GHOSTTY_API void ghostty_surface_set_pty_input_callback(
     ghostty_surface_t,
     ghostty_surface_pty_input_cb);
 GHOSTTY_API bool ghostty_surface_is_alternate_screen(ghostty_surface_t);
+
+// Battery saving: render coalescing delay (iOS) and render thread priority.
+typedef enum {
+  GHOSTTY_POWER_MODE_NORMAL = 0,
+  GHOSTTY_POWER_MODE_LOW_POWER = 1,
+} ghostty_power_mode_e;
+GHOSTTY_API void ghostty_surface_set_power_mode(ghostty_surface_t,
+                                                ghostty_power_mode_e);
 GHOSTTY_API void ghostty_surface_set_size(ghostty_surface_t, uint32_t, uint32_t);
 GHOSTTY_API ghostty_surface_size_s ghostty_surface_size(ghostty_surface_t);
 GHOSTTY_API uint64_t ghostty_surface_foreground_pid(ghostty_surface_t);
