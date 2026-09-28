@@ -18,6 +18,9 @@ const ProcessInfo = @import("../pty.zig").ProcessInfo;
 
 pub const Config = struct {};
 
+/// The apprt surface, for the embedder callbacks. Set in threadEnter.
+rt_surface: ?*apprt.runtime.Surface = null,
+
 pub fn init(alloc: Allocator, cfg: Config) !Manual {
     _ = alloc;
     _ = cfg;
@@ -44,9 +47,9 @@ pub fn threadEnter(
     io: *termio.Termio,
     td: *termio.Termio.ThreadData,
 ) !void {
-    _ = self;
     _ = alloc;
     _ = io;
+    self.rt_surface = td.surface_mailbox.surface.rt_surface;
     td.backend = .{ .manual = .{} };
 }
 
@@ -65,15 +68,27 @@ pub fn focusGained(
     _ = focused;
 }
 
+/// Tell the embedder the terminal is being resized, so it can resize the remote
+/// side (e.g. an SSH window change). This is the point where Exec sets the pty
+/// size: it runs on the termio thread right before the terminal itself resizes,
+/// after the resize coalescing delay. Telling the remote any earlier lets the
+/// program's redraw for the new size arrive while the terminal still has the old
+/// size (a 29-row frame clamped into 8 rows).
 pub fn resize(
     self: *Manual,
     grid_size: renderer.GridSize,
     screen_size: renderer.ScreenSize,
 ) !void {
-    // The embedder tells the remote side about size changes itself.
-    _ = self;
-    _ = grid_size;
-    _ = screen_size;
+    if (comptime !@hasField(apprt.runtime.Surface, "pty_resize_callback")) return;
+    const rt_surface = self.rt_surface orelse return;
+    const callback = rt_surface.pty_resize_callback orelse return;
+    callback(
+        rt_surface.userdata,
+        grid_size.columns,
+        grid_size.rows,
+        screen_size.width,
+        screen_size.height,
+    );
 }
 
 /// Hand bytes the terminal would write to the pty to the embedder. With

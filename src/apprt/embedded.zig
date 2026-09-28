@@ -463,7 +463,14 @@ pub const Surface = struct {
     /// ghostty_surface_set_pty_input_callback.
     pty_input_callback: ?PtyInputCallback = null,
 
+    /// With the manual termio backend (iOS), called on the termio thread when the
+    /// terminal resizes, with the new grid (columns, rows) and screen size in
+    /// pixels, so the embedder can resize the remote side then. Set with
+    /// ghostty_surface_set_pty_resize_callback.
+    pty_resize_callback: ?PtyResizeCallback = null,
+
     pub const PtyInputCallback = *const fn (?*anyopaque, [*]const u8, usize) callconv(.c) void;
+    pub const PtyResizeCallback = *const fn (?*anyopaque, u16, u16, u32, u32) callconv(.c) void;
 
     /// Surface initialization options.
     pub const Options = extern struct {
@@ -2039,6 +2046,15 @@ pub const CAPI = struct {
         callback: ?Surface.PtyInputCallback,
     ) void {
         surface.pty_input_callback = callback;
+    }
+
+    /// Set the callback told about terminal resizes (manual termio backend).
+    /// Pass null to clear it.
+    export fn ghostty_surface_set_pty_resize_callback(
+        surface: *Surface,
+        callback: ?Surface.PtyResizeCallback,
+    ) void {
+        surface.pty_resize_callback = callback;
     }
 
     /// Set the battery-saving power mode (0 = normal, 1 = low power). Changes

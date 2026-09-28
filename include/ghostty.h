@@ -1201,6 +1201,17 @@ GHOSTTY_API void ghostty_surface_write_pty_output(ghostty_surface_t,
 GHOSTTY_API void ghostty_surface_set_pty_input_callback(
     ghostty_surface_t,
     ghostty_surface_pty_input_cb);
+// Called on the termio thread as the terminal resizes: (userdata, columns,
+// rows, width_px, height_px). Resize the remote side from here, not when
+// calling ghostty_surface_set_size, so its redraw can't beat the resize.
+typedef void (*ghostty_surface_pty_resize_cb)(void*,
+                                              uint16_t,
+                                              uint16_t,
+                                              uint32_t,
+                                              uint32_t);
+GHOSTTY_API void ghostty_surface_set_pty_resize_callback(
+    ghostty_surface_t,
+    ghostty_surface_pty_resize_cb);
 GHOSTTY_API bool ghostty_surface_is_alternate_screen(ghostty_surface_t);
 GHOSTTY_API uintptr_t ghostty_surface_scrollback_offset(ghostty_surface_t);
 GHOSTTY_API bool ghostty_surface_prepend_scrollback(ghostty_surface_t,
