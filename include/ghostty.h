@@ -1202,6 +1202,7 @@ GHOSTTY_API void ghostty_surface_set_pty_input_callback(
     ghostty_surface_t,
     ghostty_surface_pty_input_cb);
 GHOSTTY_API bool ghostty_surface_is_alternate_screen(ghostty_surface_t);
+GHOSTTY_API uintptr_t ghostty_surface_scrollback_offset(ghostty_surface_t);
 GHOSTTY_API bool ghostty_surface_prepend_scrollback(ghostty_surface_t,
                                                     const char*,
                                                     uintptr_t);

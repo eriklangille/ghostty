@@ -2075,6 +2075,15 @@ pub const CAPI = struct {
         return added > 0;
     }
 
+    /// The viewport's row offset from the top of the scrollback (0 at the very
+    /// top). Lets embedders load older history before the user reaches it.
+    export fn ghostty_surface_scrollback_offset(surface: *Surface) usize {
+        const core = &surface.core_surface;
+        core.renderer_state.mutex.lockUncancelable(global.io());
+        defer core.renderer_state.mutex.unlock(global.io());
+        return core.renderer_state.terminal.screens.active.pages.scrollbar().offset;
+    }
+
     /// Whether the terminal is currently showing the alternate screen
     /// (full-screen programs such as vim or Claude Code).
     export fn ghostty_surface_is_alternate_screen(surface: *Surface) bool {
