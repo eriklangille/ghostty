@@ -449,6 +449,8 @@ typedef struct {
 typedef struct {
   double tl_px_x;
   double tl_px_y;
+  double br_px_x;
+  double br_px_y;
   uint32_t offset_start;
   uint32_t offset_len;
   const char* text;

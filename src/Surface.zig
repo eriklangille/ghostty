@@ -1976,6 +1976,11 @@ pub const Text = struct {
         tl_px_x: f64,
         tl_px_y: f64,
 
+        /// The bottom-right corner of the selection in pixels within the
+        /// viewport (right edge of the last cell, at the text baseline).
+        br_px_x: f64,
+        br_px_y: f64,
+
         /// The linear offset of the start of the selection and the length.
         /// This is "linear" in the sense that it is the offset in the
         /// flattened viewport as a single array of text.
@@ -2112,6 +2117,21 @@ pub fn dumpTextLocked(
             break :y y;
         };
 
+        // Bottom-right: the right edge of the last cell, at its baseline
+        const br_x: f64 = br_x: {
+            var br_x: f64 = @floatFromInt((br_coord.x + 1) * self.size.cell.width);
+            br_x += @floatFromInt(self.size.padding.left);
+            br_x /= content_scale.x;
+            break :br_x br_x;
+        };
+        const br_y: f64 = br_y: {
+            var br_y: f64 = @floatFromInt((br_coord.y + 1) * self.size.cell.height);
+            br_y -= @floatFromInt(self.font_metrics.cell_baseline);
+            br_y += @floatFromInt(self.size.padding.top);
+            br_y /= content_scale.y;
+            break :br_y br_y;
+        };
+
         // Utilize viewport sizing to convert to offsets
         const start = tl_coord.y * self.io.terminal.screens.active.pages.cols + tl_coord.x;
         const end = br_coord.y * self.io.terminal.screens.active.pages.cols + br_coord.x;
@@ -2119,6 +2139,8 @@ pub fn dumpTextLocked(
         break :viewport .{
             .tl_px_x = x,
             .tl_px_y = y,
+            .br_px_x = br_x,
+            .br_px_y = br_y,
             .offset_start = start,
             .offset_len = end - start,
         };

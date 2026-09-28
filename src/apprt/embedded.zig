@@ -1565,6 +1565,8 @@ pub const CAPI = struct {
     const Text = extern struct {
         tl_px_x: f64,
         tl_px_y: f64,
+        br_px_x: f64,
+        br_px_y: f64,
         offset_start: u32,
         offset_len: u32,
         text: ?[*:0]const u8,
@@ -1927,6 +1929,8 @@ pub const CAPI = struct {
         const vp: CoreSurface.Text.Viewport = text.viewport orelse .{
             .tl_px_x = -1,
             .tl_px_y = -1,
+            .br_px_x = -1,
+            .br_px_y = -1,
             .offset_start = 0,
             .offset_len = 0,
         };
@@ -1934,6 +1938,8 @@ pub const CAPI = struct {
         result.* = .{
             .tl_px_x = vp.tl_px_x,
             .tl_px_y = vp.tl_px_y,
+            .br_px_x = vp.br_px_x,
+            .br_px_y = vp.br_px_y,
             .offset_start = vp.offset_start,
             .offset_len = vp.offset_len,
             .text = text.text.ptr,
