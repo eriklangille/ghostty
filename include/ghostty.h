@@ -1189,6 +1189,17 @@ GHOSTTY_API void ghostty_surface_draw(ghostty_surface_t);
 GHOSTTY_API void ghostty_surface_set_content_scale(ghostty_surface_t, double, double);
 GHOSTTY_API void ghostty_surface_set_focus(ghostty_surface_t, bool);
 GHOSTTY_API void ghostty_surface_set_occlusion(ghostty_surface_t, bool);
+
+// Manual termio backend (iOS): the embedder feeds program output in and
+// receives the bytes the terminal would write to its pty.
+typedef void (*ghostty_surface_pty_input_cb)(void*, const char*, uintptr_t);
+GHOSTTY_API void ghostty_surface_write_pty_output(ghostty_surface_t,
+                                                  const char*,
+                                                  uintptr_t);
+GHOSTTY_API void ghostty_surface_set_pty_input_callback(
+    ghostty_surface_t,
+    ghostty_surface_pty_input_cb);
+GHOSTTY_API bool ghostty_surface_is_alternate_screen(ghostty_surface_t);
 GHOSTTY_API void ghostty_surface_set_size(ghostty_surface_t, uint32_t, uint32_t);
 GHOSTTY_API ghostty_surface_size_s ghostty_surface_size(ghostty_surface_t);
 GHOSTTY_API uint64_t ghostty_surface_foreground_pid(ghostty_surface_t);

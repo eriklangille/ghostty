@@ -659,8 +659,12 @@ pub fn init(
             std.fmt.bufPrint(&buf, "0x{x:0>16}", .{self.id}) catch unreachable,
         );
 
-        // Initialize our IO backend
-        var io_exec = try termio.Exec.init(alloc, .{
+        // Initialize our IO backend. iOS can't spawn processes, so the
+        // embedder feeds the terminal directly (termio.Manual).
+        var backend: termio.Backend = if (comptime builtin.os.tag == .ios)
+            .{ .manual = try termio.Manual.init(alloc, .{}) }
+        else
+            .{ .exec = try termio.Exec.init(alloc, .{
             .command = command,
             .env = env,
             .env_override = config.env,
@@ -672,8 +676,8 @@ pub fn init(
             .term = config.term,
             .rt_pre_exec_info = .init(config),
             .rt_post_fork_info = .init(config),
-        });
-        errdefer io_exec.deinit();
+        }) };
+        errdefer backend.deinit();
 
         // Initialize our IO mailbox
         var io_mailbox = try termio.Mailbox.initSPSC(alloc);
@@ -683,13 +687,16 @@ pub fn init(
             .size = size,
             .full_config = config,
             .config = try termio.Termio.DerivedConfig.init(alloc, config),
-            .backend = .{ .exec = io_exec },
+            .backend = backend,
             .mailbox = io_mailbox,
             .renderer_state = &self.renderer_state,
             .renderer_wakeup = render_thread.wakeup,
             .renderer_mailbox = render_thread.mailbox,
             .surface_mailbox = .{ .surface = self, .app = app_mailbox },
         });
+
+        // Exec takes ownership of env; Manual doesn't use it.
+        if (comptime builtin.os.tag == .ios) env.deinit();
     }
     // Outside the block, IO has now taken ownership of our temporary state
     // so we can just defer this and not the subcomponents.
@@ -1352,6 +1359,7 @@ fn childExitedAbnormally(
     // Build up our command for the error message
     const command = try std.mem.join(alloc, " ", switch (self.io.backend) {
         .exec => |*exec| exec.subprocess.args,
+        .manual => &.{},
     });
     const runtime_str = try std.fmt.allocPrint(alloc, "{d} ms", .{info.runtime_ms});
 

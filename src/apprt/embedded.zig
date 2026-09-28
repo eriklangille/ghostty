@@ -458,6 +458,13 @@ pub const Surface = struct {
     /// that getTitle works without the implementer needing to save it.
     title: ?[:0]const u8 = null,
 
+    /// With the manual termio backend (iOS), receives the bytes the terminal
+    /// would write to its pty: keys, mouse, paste and query replies. Set with
+    /// ghostty_surface_set_pty_input_callback.
+    pty_input_callback: ?PtyInputCallback = null,
+
+    pub const PtyInputCallback = *const fn (?*anyopaque, [*]const u8, usize) callconv(.c) void;
+
     /// Surface initialization options.
     pub const Options = extern struct {
         /// The platform that this surface is being initialized for and
@@ -2006,6 +2013,35 @@ pub const CAPI = struct {
     /// Update the occlusion state of a surface.
     export fn ghostty_surface_set_occlusion(surface: *Surface, visible: bool) void {
         surface.occlusionCallback(visible);
+    }
+
+    /// Feed program output into the terminal as if it had been read from the
+    /// pty. For surfaces using the manual termio backend (iOS), where output
+    /// comes from elsewhere (e.g. an SSH channel).
+    export fn ghostty_surface_write_pty_output(
+        surface: *Surface,
+        ptr: [*]const u8,
+        len: usize,
+    ) void {
+        surface.core_surface.io.processOutput(ptr[0..len]);
+    }
+
+    /// Set the callback that receives the bytes the terminal would write to
+    /// its pty (manual termio backend). Pass null to clear it.
+    export fn ghostty_surface_set_pty_input_callback(
+        surface: *Surface,
+        callback: ?Surface.PtyInputCallback,
+    ) void {
+        surface.pty_input_callback = callback;
+    }
+
+    /// Whether the terminal is currently showing the alternate screen
+    /// (full-screen programs such as vim or Claude Code).
+    export fn ghostty_surface_is_alternate_screen(surface: *Surface) bool {
+        const core = &surface.core_surface;
+        core.renderer_state.mutex.lockUncancelable(global.io());
+        defer core.renderer_state.mutex.unlock(global.io());
+        return core.renderer_state.terminal.screens.active_key == .alternate;
     }
 
     /// Filter the mods if necessary. This handles settings such as
