@@ -1956,6 +1956,52 @@ pub const CAPI = struct {
         return true;
     }
 
+    /// Clauntty: like ghostty_surface_read_text, but keeps the styling as VT
+    /// (SGR) sequences, so the app can tell dim placeholder or suggestion text
+    /// from typed text. Lines are unwrapped and separated by "\r\n". No
+    /// viewport information is filled in. Free with ghostty_surface_free_text.
+    export fn ghostty_surface_read_text_vt(
+        surface: *Surface,
+        sel: Selection,
+        result: *Text,
+    ) bool {
+        const core_surface = &surface.core_surface;
+        core_surface.renderer_state.mutex.lockUncancelable(global.io());
+        defer core_surface.renderer_state.mutex.unlock(global.io());
+
+        const screen = core_surface.renderer_state.terminal.screens.active;
+        const core_sel = sel.core(screen) orelse return false;
+
+        var aw: std.Io.Writer.Allocating = .init(global.alloc());
+        defer aw.deinit();
+        var formatter: terminal.formatter.ScreenFormatter = .init(screen, .{
+            .emit = .vt,
+            .unwrap = true,
+            .trim = true,
+        });
+        formatter.content = .{ .selection = core_sel };
+        formatter.format(&aw.writer) catch |err| {
+            log.warn("error reading styled text err={}", .{err});
+            return false;
+        };
+        const text = aw.toOwnedSliceSentinel(0) catch |err| {
+            log.warn("error reading styled text err={}", .{err});
+            return false;
+        };
+
+        result.* = .{
+            .tl_px_x = -1,
+            .tl_px_y = -1,
+            .br_px_x = -1,
+            .br_px_y = -1,
+            .offset_start = 0,
+            .offset_len = 0,
+            .text = text.ptr,
+            .text_len = text.len,
+        };
+        return true;
+    }
+
     export fn ghostty_surface_free_text(_: *Surface, ptr: *Text) void {
         ptr.deinit();
     }
