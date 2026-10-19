@@ -4,7 +4,8 @@
 //! bytes the terminal would have written to the pty (keys, mouse, paste,
 //! query replies) through the surface's pty input callback.
 //!
-//! This is for platforms that can't spawn processes, such as iOS, where the
+//! This is for platforms that can't spawn processes, such as iOS, and for
+//! embedders that ask for it (the surface config's manual_io), where the
 //! terminal is connected to something remote (e.g. an SSH channel).
 const Manual = @This();
 

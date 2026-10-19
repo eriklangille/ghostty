@@ -469,6 +469,11 @@ pub const Surface = struct {
     /// ghostty_surface_set_pty_resize_callback.
     pty_resize_callback: ?PtyResizeCallback = null,
 
+    /// Use the manual termio backend: no process, the embedder feeds output in
+    /// and gets input through the callbacks above. Always the case on iOS; on
+    /// other platforms it's opt-in through the surface config (manual_io).
+    manual_io: bool = false,
+
     pub const PtyInputCallback = *const fn (?*anyopaque, [*]const u8, usize) callconv(.c) void;
     pub const PtyResizeCallback = *const fn (?*anyopaque, u16, u16, u32, u32) callconv(.c) void;
 
@@ -513,6 +518,10 @@ pub const Surface = struct {
 
         /// Context for the new surface
         context: apprt.surface.NewSurfaceContext = .window,
+
+        /// Don't spawn a process: the embedder feeds the terminal (see
+        /// Surface.manual_io). Ignored on iOS, which is always manual.
+        manual_io: bool = false,
     };
 
     pub fn init(self: *Surface, app: *App, opts: Options) !void {
@@ -527,6 +536,7 @@ pub const Surface = struct {
             },
             .size = .{ .width = 800, .height = 600 },
             .cursor_pos = .{ .x = -1, .y = -1 },
+            .manual_io = opts.manual_io,
         };
 
         // Add ourselves to the list of surfaces on the app.

@@ -659,9 +659,16 @@ pub fn init(
             std.fmt.bufPrint(&buf, "0x{x:0>16}", .{self.id}) catch unreachable,
         );
 
-        // Initialize our IO backend. iOS can't spawn processes, so the
-        // embedder feeds the terminal directly (termio.Manual).
-        var backend: termio.Backend = if (comptime builtin.os.tag == .ios)
+        // Initialize our IO backend. The embedder feeds the terminal directly
+        // (termio.Manual) on iOS, which can't spawn processes, and wherever it
+        // asks to (manual_io), e.g. a macOS terminal connected over SSH.
+        const manual_io = if (comptime builtin.os.tag == .ios)
+            true
+        else if (comptime @hasField(apprt.runtime.Surface, "manual_io"))
+            rt_surface.manual_io
+        else
+            false;
+        var backend: termio.Backend = if (manual_io)
             .{ .manual = try termio.Manual.init(alloc, .{}) }
         else
             .{ .exec = try termio.Exec.init(alloc, .{
@@ -696,7 +703,7 @@ pub fn init(
         });
 
         // Exec takes ownership of env; Manual doesn't use it.
-        if (comptime builtin.os.tag == .ios) env.deinit();
+        if (manual_io) env.deinit();
     }
     // Outside the block, IO has now taken ownership of our temporary state
     // so we can just defer this and not the subcomponents.

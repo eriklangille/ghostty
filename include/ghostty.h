@@ -520,6 +520,7 @@ typedef struct {
   const char* initial_input;
   bool wait_after_command;
   ghostty_surface_context_e context;
+  bool manual_io;
 } ghostty_surface_config_s;
 
 typedef struct {
@@ -1192,8 +1193,9 @@ GHOSTTY_API void ghostty_surface_set_content_scale(ghostty_surface_t, double, do
 GHOSTTY_API void ghostty_surface_set_focus(ghostty_surface_t, bool);
 GHOSTTY_API void ghostty_surface_set_occlusion(ghostty_surface_t, bool);
 
-// Manual termio backend (iOS): the embedder feeds program output in and
-// receives the bytes the terminal would write to its pty.
+// Manual termio backend (always on iOS, elsewhere with the surface config's
+// manual_io): the embedder feeds program output in and receives the bytes the
+// terminal would write to its pty.
 typedef void (*ghostty_surface_pty_input_cb)(void*, const char*, uintptr_t);
 GHOSTTY_API void ghostty_surface_write_pty_output(ghostty_surface_t,
                                                   const char*,
