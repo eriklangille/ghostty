@@ -1880,6 +1880,13 @@ pub const CAPI = struct {
         return surface.core_surface.hasSelection();
     }
 
+    /// Drops the user selection, without a click (see Surface.clearSelection)
+    export fn ghostty_surface_clear_selection(surface: *Surface) void {
+        surface.core_surface.clearSelection() catch |err| {
+            log.warn("error clearing selection err={}", .{err});
+        };
+    }
+
     /// Same as ghostty_surface_read_text but reads from the user selection,
     /// if any.
     export fn ghostty_surface_read_selection(
