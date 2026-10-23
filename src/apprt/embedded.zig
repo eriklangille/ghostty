@@ -2255,6 +2255,12 @@ pub const CAPI = struct {
         return surface.core_surface.mouseCaptured();
     }
 
+    /// Returns true if the program asked for drag events (1002/1003),
+    /// not only clicks.
+    export fn ghostty_surface_mouse_captures_drag(surface: *Surface) bool {
+        return surface.core_surface.mouseCapturesDrag();
+    }
+
     /// Tell the surface that it needs to schedule a render
     export fn ghostty_surface_mouse_button(
         surface: *Surface,

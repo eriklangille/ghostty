@@ -3918,6 +3918,17 @@ pub fn mouseCaptured(self: *Surface) bool {
     return self.io.terminal.flags.mouse_event != .none;
 }
 
+/// True when the program asked for drags (1002/1003), not only clicks: a drag is for it
+/// to handle, e.g. its own selection.
+pub fn mouseCapturesDrag(self: *Surface) bool {
+    self.renderer_state.mutex.lockUncancelable(global.io());
+    defer self.renderer_state.mutex.unlock(global.io());
+    return switch (self.io.terminal.flags.mouse_event) {
+        .button, .any => true,
+        else => false,
+    };
+}
+
 /// Called for mouse button press/release events. This will return true
 /// if the mouse event was consumed in some way (i.e. the program is capturing
 /// mouse events). If the event was not consumed, then false is returned.
